@@ -34,7 +34,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
+          pip install metaflow python-dotenv pylint
 
       - name: Start MLflow server
         run: |
