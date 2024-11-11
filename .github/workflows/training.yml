@@ -38,4 +38,4 @@ jobs:
           pip install metaflow mlflow python-dotenv
 
       - name: Run training pipeline
-        run: python pipelines/training.py run --environment=pypi
+        run: python pipelines/training.py --environment=pypi run
