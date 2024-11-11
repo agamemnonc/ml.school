@@ -25,6 +25,7 @@ from metaflow import (
     resources,
     step,
 )
+from metaflow.cards import Image
 
 configure_logging()
 
@@ -43,6 +44,7 @@ configure_logging()
         "mlflow",
         "setuptools",
         "python-dotenv",
+        "psutil",
     ),
 )
 class Training(FlowSpec, FlowMixin):
@@ -248,6 +250,10 @@ class Training(FlowSpec, FlowMixin):
             verbose=2,
         )
 
+        # Also store ground truth values and predictions for later analysis
+        self.y_true = self.y_test
+        self.y_pred = self.model.predict(self.x_test)
+
         logging.info(
             "Fold %d - loss: %f - accuracy: %f",
             self.fold,
@@ -281,6 +287,8 @@ class Training(FlowSpec, FlowMixin):
         """
         import mlflow
         import numpy as np
+        import matplotlib.pyplot as plt
+        from sklearn.metrics import ConfusionMatrixDisplay
 
         # We need access to the `mlflow_run_id` and `mlflow_tracking_uri` artifacts
         # that we set at the start of the flow, but since we are in a join step, we
@@ -292,8 +300,19 @@ class Training(FlowSpec, FlowMixin):
         # all the cross-validation folds. Notice how we are accumulating these values
         # using the `inputs` parameter provided by Metaflow.
         metrics = [[i.accuracy, i.loss] for i in inputs]
+
         self.accuracy, self.loss = np.mean(metrics, axis=0)
         self.accuracy_std, self.loss_std = np.std(metrics, axis=0)
+
+        y_true_all = np.concatenate([i.y_true for i in inputs]).astype(int)
+        y_pred_all = np.argmax(np.concatenate([i.y_pred for i in inputs]), axis=1)
+
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ConfusionMatrixDisplay.from_predictions(y_true_all, y_pred_all, ax=ax)
+        ax.set_title("Confusion Matrix")
+        
+        current.card.append(Image.from_matplotlib(fig))
+        plt.close(fig)
 
         logging.info("Accuracy: %f ±%f", self.accuracy, self.accuracy_std)
         logging.info("Loss: %f ±%f", self.loss, self.loss_std)
