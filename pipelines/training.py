@@ -6,6 +6,9 @@ from common import (
     PYTHON,
     TRAINING_BATCH_SIZE,
     TRAINING_EPOCHS,
+    DEBUG_N_SPLITS,
+    DEBUG_TRAINING_EPOCHS,
+    DEBUG_DATA_FRAC,
     FlowMixin,
     build_features_transformer,
     build_model,
@@ -64,6 +67,19 @@ class Training(FlowSpec, FlowMixin):
         default=0.7,
     )
 
+    n_splits = Parameter(
+        "n-splits",
+        help="Number of splits to use for the cross-validation process.",
+        default=5,
+    )
+
+    debugging_mode = Parameter(
+        "debug",
+        help="Run the flow in debug mode.",
+        default=False,
+        is_flag=True,
+    )
+
     @card
     @environment(
         vars={
@@ -78,6 +94,11 @@ class Training(FlowSpec, FlowMixin):
         """Start and prepare the Training pipeline."""
         import mlflow
 
+        if self.debugging_mode and current.is_production:
+            raise ValueError(
+                "Debug mode cannot be used with production mode (--production)"
+            )
+
         self.mlflow_tracking_uri = os.getenv("MLFLOW_TRACKING_URI")
 
         logging.info("MLFLOW_TRACKING_URI: %s", self.mlflow_tracking_uri)
@@ -87,6 +108,9 @@ class Training(FlowSpec, FlowMixin):
         logging.info("Running flow in %s mode.", self.mode)
 
         self.data = self.load_dataset()
+
+        if self.debugging_mode:
+            self.data = self.data.sample(frac=DEBUG_DATA_FRAC)
 
         try:
             # Let's start a new MLFlow run to track everything that happens during the
@@ -102,7 +126,7 @@ class Training(FlowSpec, FlowMixin):
         # This is the configuration we'll use to train the model. We want to set it up
         # at this point so we can reuse it later throughout the flow.
         self.training_parameters = {
-            "epochs": TRAINING_EPOCHS,
+            "epochs": DEBUG_TRAINING_EPOCHS if self.debugging_mode else TRAINING_EPOCHS,
             "batch_size": TRAINING_BATCH_SIZE,
         }
 
@@ -119,7 +143,10 @@ class Training(FlowSpec, FlowMixin):
 
         # We are going to use a 5-fold cross-validation process to evaluate the model,
         # so let's set it up. We'll shuffle the data before splitting it into batches.
-        kfold = KFold(n_splits=5, shuffle=True)
+        kfold = KFold(
+            n_splits=DEBUG_N_SPLITS if self.debugging_mode else self.n_splits,
+            shuffle=True,
+        )
 
         # We can now generate the indices to split the dataset into training and test
         # sets. This will return a tuple with the fold number and the training and test

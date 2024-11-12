@@ -32,6 +32,10 @@ PACKAGES = {
 TRAINING_EPOCHS = 50
 TRAINING_BATCH_SIZE = 32
 
+DEBUG_TRAINING_EPOCHS = 2
+DEBUG_N_SPLITS = 2
+DEBUG_DATA_FRAC = 0.1
+
 
 class FlowMixin:
     """Base class used to share code across multiple pipelines."""
