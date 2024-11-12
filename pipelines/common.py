@@ -5,9 +5,10 @@ import sys
 import time
 from io import StringIO
 from pathlib import Path
+from glob import glob
 
 import pandas as pd
-from metaflow import S3, IncludeFile, current
+from metaflow import S3, Parameter, current
 
 PYTHON = "3.12"
 
@@ -40,14 +41,13 @@ DEBUG_DATA_FRAC = 0.1
 class FlowMixin:
     """Base class used to share code across multiple pipelines."""
 
-    dataset = IncludeFile(
-        "penguins",
-        is_text=True,
+    data_path = Parameter(
+        "data-path",
         help=(
-            "Local copy of the penguins dataset. This file will be included in the "
-            "flow and will be used whenever the flow is executed in development mode."
+            "Directory containing CSV files to process. All CSV files will be "
+            "concatenated into a single dataset."
         ),
-        default="data/penguins.csv",
+        default="data",
     )
 
     def load_dataset(self):
@@ -61,19 +61,20 @@ class FlowMixin:
         import numpy as np
 
         if current.is_production:
-            dataset = os.environ.get("DATASET", self.dataset)
+            data_path = os.environ.get("DATA_PATH", self.data_path)
 
-            with S3(s3root=dataset) as s3:
+            with S3(s3root=data_path) as s3:
                 files = s3.get_all()
-
                 logging.info("Found %d file(s) in remote location", len(files))
-
                 raw_data = [pd.read_csv(StringIO(file.text)) for file in files]
-                data = pd.concat(raw_data)
         else:
             # When running in development mode, the raw data is passed as a string,
             # so we can convert it to a DataFrame.
-            data = pd.read_csv(StringIO(self.dataset))
+            csv_files = glob(os.path.join(self.data_path, "*.csv"))
+            logging.info("Found %d CSV file(s) in local directory", len(csv_files))
+            raw_data = [pd.read_csv(f) for f in csv_files]
+
+        data = pd.concat(raw_data, ignore_index=True)
 
         # Replace extraneous values in the sex column with NaN. We can handle missing
         # values later in the pipeline.
