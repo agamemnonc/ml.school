@@ -266,26 +266,40 @@ class Training(FlowSpec, FlowMixin):
         the model using the test data for this fold.
         """
         import mlflow
+        import numpy as np
+        from sklearn import metrics
 
         logging.info("Evaluating fold %d...", self.fold)
 
+        # Also store ground truth values and predictions for later analysis
+        self.y_true = self.y_test
+        self.y_proba = self.model.predict(self.x_test)
+        self.y_pred = np.argmax(self.y_proba, axis=1)
+
         # Let's evaluate the model using the test data we processed and stored as
         # artifacts during the `transform` step.
-        self.loss, self.accuracy = self.model.evaluate(
+        self.loss = self.model.evaluate(
             self.x_test,
             self.y_test,
             verbose=2,
         )
 
-        # Also store ground truth values and predictions for later analysis
-        self.y_true = self.y_test
-        self.y_pred = self.model.predict(self.x_test)
+        self.accuracy = metrics.accuracy_score(self.y_true, self.y_pred)
+        self.recall = metrics.recall_score(self.y_true, self.y_pred, average="macro")
+        self.precision = metrics.precision_score(self.y_true, self.y_pred, average="macro")
+        self.average_precision = metrics.average_precision_score(self.y_true, self.y_proba, average="macro")
+        self.auc = metrics.roc_auc_score(self.y_true, self.y_proba, average="macro", multi_class="ovr")
+
 
         logging.info(
-            "Fold %d - loss: %f - accuracy: %f",
+            "Fold %d - loss: %f - accuracy: %f - recall: %f - precision: %f - average_precision: %f - auc: %f",
             self.fold,
             self.loss,
             self.accuracy,
+            self.recall,
+            self.precision,
+            self.average_precision,
+            self.auc,
         )
 
         # Let's log everything under the same nested run we created when training the
@@ -326,13 +340,13 @@ class Training(FlowSpec, FlowMixin):
         # Let's calculate the mean and standard deviation of the accuracy and loss from
         # all the cross-validation folds. Notice how we are accumulating these values
         # using the `inputs` parameter provided by Metaflow.
-        metrics = [[i.accuracy, i.loss] for i in inputs]
+        metrics = [[i.loss, i.accuracy, i.recall, i.precision, i.average_precision, i.auc] for i in inputs]
 
-        self.accuracy, self.loss = np.mean(metrics, axis=0)
-        self.accuracy_std, self.loss_std = np.std(metrics, axis=0)
+        self.loss, self.accuracy, self.recall, self.precision, self.average_precision, self.auc = np.mean(metrics, axis=0)
+        self.loss_std, self.accuracy_std, self.recall_std, self.precision_std, self.average_precision_std, self.auc_std = np.std(metrics, axis=0)
 
         y_true_all = np.concatenate([i.y_true for i in inputs]).astype(int)
-        y_pred_all = np.argmax(np.concatenate([i.y_pred for i in inputs]), axis=1)
+        y_pred_all = np.concatenate([i.y_pred for i in inputs])
 
         fig, ax = plt.subplots(figsize=(8, 6))
         ConfusionMatrixDisplay.from_predictions(y_true_all, y_pred_all, ax=ax)
@@ -341,9 +355,12 @@ class Training(FlowSpec, FlowMixin):
         current.card.append(Image.from_matplotlib(fig))
         plt.close(fig)
 
-        logging.info("Accuracy: %f ±%f", self.accuracy, self.accuracy_std)
         logging.info("Loss: %f ±%f", self.loss, self.loss_std)
-
+        logging.info("Accuracy: %f ±%f", self.accuracy, self.accuracy_std)
+        logging.info("Recall: %f ±%f", self.recall, self.recall_std)
+        logging.info("Precision: %f ±%f", self.precision, self.precision_std)
+        logging.info("Average Precision: %f ±%f", self.average_precision, self.average_precision_std)
+        logging.info("AUC: %f ±%f", self.auc, self.auc_std)
         # Let's log the model metrics on the parent run.
         mlflow.set_tracking_uri(self.mlflow_tracking_uri)
         with mlflow.start_run(run_id=self.mlflow_run_id):
@@ -353,6 +370,14 @@ class Training(FlowSpec, FlowMixin):
                     "cross_validation_accuracy_std": self.accuracy_std,
                     "cross_validation_loss": self.loss,
                     "cross_validation_loss_std": self.loss_std,
+                    "cross_validation_recall": self.recall,
+                    "cross_validation_recall_std": self.recall_std,
+                    "cross_validation_precision": self.precision,
+                    "cross_validation_precision_std": self.precision_std,
+                    "cross_validation_average_precision": self.average_precision,
+                    "cross_validation_average_precision_std": self.average_precision_std,
+                    "cross_validation_auc": self.auc,
+                    "cross_validation_auc_std": self.auc_std,
                 },
             )
 

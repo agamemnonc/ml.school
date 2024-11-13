@@ -181,7 +181,6 @@ def build_model(input_shape, learning_rate=0.01):
     model.compile(
         optimizer=optimizers.SGD(learning_rate=learning_rate),
         loss="sparse_categorical_crossentropy",
-        metrics=["accuracy"],
     )
 
     return model
