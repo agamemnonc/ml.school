@@ -87,6 +87,10 @@ class Training(FlowSpec, FlowMixin):
                 "MLFLOW_TRACKING_URI",
                 "http://127.0.0.1:5000",
             ),
+            "MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING": os.getenv(
+                "MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING",
+                "true",
+            ),
         },
     )
     @step
@@ -103,6 +107,9 @@ class Training(FlowSpec, FlowMixin):
 
         logging.info("MLFLOW_TRACKING_URI: %s", self.mlflow_tracking_uri)
         mlflow.set_tracking_uri(self.mlflow_tracking_uri)
+        if os.getenv("MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING", "true").lower() == "true":
+            logging.info("Enabling system metrics logging")
+            mlflow.enable_system_metrics_logging()
 
         self.mode = "production" if current.is_production else "development"
         logging.info("Running flow in %s mode.", self.mode)
@@ -140,18 +147,30 @@ class Training(FlowSpec, FlowMixin):
     def cross_validation(self):
         """Generate the indices to split the data for the cross-validation process."""
         from sklearn.model_selection import KFold
+        from sklearn.model_selection import train_test_split
 
-        # We are going to use a 5-fold cross-validation process to evaluate the model,
-        # so let's set it up. We'll shuffle the data before splitting it into batches.
-        kfold = KFold(
-            n_splits=DEBUG_N_SPLITS if self.debugging_mode else self.n_splits,
-            shuffle=True,
-        )
+        if self.n_splits > 1:
+            logging.info("Using %d-fold cross-validation", self.n_splits)
+            # We are going to use a 5-fold cross-validation process to evaluate the 
+            # model, so let's set it up. We'll shuffle the data before splitting it into
+            # batches.
+            kfold = KFold(
+                n_splits=DEBUG_N_SPLITS if self.debugging_mode else self.n_splits,
+                shuffle=True,
+            )
 
-        # We can now generate the indices to split the dataset into training and test
-        # sets. This will return a tuple with the fold number and the training and test
-        # indices for each of 5 folds.
-        self.folds = list(enumerate(kfold.split(self.data)))
+            # We can now generate the indices to split the dataset into training and
+            # test sets. This will return a tuple with the fold number and the training
+            # and test indices for each of 5 folds.
+            self.folds = list(enumerate(kfold.split(self.data)))
+        else:
+            logging.info("Using 20%% test size with stratification")
+            # If we are not using cross-validation, we'll split the data into training
+            # and test sets using a 20% test size and stratify the target column.
+            train_idx, test_idx = train_test_split(
+                range(len(self.data)), test_size=0.2, stratify=self.data.species
+            )
+            self.folds = [(0, (train_idx, test_idx))]
 
         # We want to transform the data and train a model using each fold, so we'll use
         # `foreach` to run every cross-validation iteration in parallel. Notice how we
@@ -286,13 +305,19 @@ class Training(FlowSpec, FlowMixin):
 
         self.accuracy = metrics.accuracy_score(self.y_true, self.y_pred)
         self.recall = metrics.recall_score(self.y_true, self.y_pred, average="macro")
-        self.precision = metrics.precision_score(self.y_true, self.y_pred, average="macro")
-        self.average_precision = metrics.average_precision_score(self.y_true, self.y_proba, average="macro")
-        self.auc = metrics.roc_auc_score(self.y_true, self.y_proba, average="macro", multi_class="ovr")
-
+        self.precision = metrics.precision_score(
+            self.y_true, self.y_pred, average="macro"
+        )
+        self.average_precision = metrics.average_precision_score(
+            self.y_true, self.y_proba, average="macro"
+        )
+        self.auc = metrics.roc_auc_score(
+            self.y_true, self.y_proba, average="macro", multi_class="ovr"
+        )
 
         logging.info(
-            "Fold %d - loss: %f - accuracy: %f - recall: %f - precision: %f - average_precision: %f - auc: %f",
+            "Fold %d - loss: %f - accuracy: %f - recall: %f - precision: %f - "
+            "average_precision: %f - auc: %f",
             self.fold,
             self.loss,
             self.accuracy,
@@ -340,10 +365,27 @@ class Training(FlowSpec, FlowMixin):
         # Let's calculate the mean and standard deviation of the accuracy and loss from
         # all the cross-validation folds. Notice how we are accumulating these values
         # using the `inputs` parameter provided by Metaflow.
-        metrics = [[i.loss, i.accuracy, i.recall, i.precision, i.average_precision, i.auc] for i in inputs]
+        metrics = [
+            [i.loss, i.accuracy, i.recall, i.precision, i.average_precision, i.auc]
+            for i in inputs
+        ]
 
-        self.loss, self.accuracy, self.recall, self.precision, self.average_precision, self.auc = np.mean(metrics, axis=0)
-        self.loss_std, self.accuracy_std, self.recall_std, self.precision_std, self.average_precision_std, self.auc_std = np.std(metrics, axis=0)
+        (
+            self.loss,
+            self.accuracy,
+            self.recall,
+            self.precision,
+            self.average_precision,
+            self.auc,
+        ) = np.mean(metrics, axis=0)
+        (
+            self.loss_std,
+            self.accuracy_std,
+            self.recall_std,
+            self.precision_std,
+            self.average_precision_std,
+            self.auc_std,
+        ) = np.std(metrics, axis=0)
 
         y_true_all = np.concatenate([i.y_true for i in inputs]).astype(int)
         y_pred_all = np.concatenate([i.y_pred for i in inputs])
@@ -351,7 +393,7 @@ class Training(FlowSpec, FlowMixin):
         fig, ax = plt.subplots(figsize=(8, 6))
         ConfusionMatrixDisplay.from_predictions(y_true_all, y_pred_all, ax=ax)
         ax.set_title("Confusion Matrix")
-        
+
         current.card.append(Image.from_matplotlib(fig))
         plt.close(fig)
 
@@ -359,7 +401,11 @@ class Training(FlowSpec, FlowMixin):
         logging.info("Accuracy: %f ±%f", self.accuracy, self.accuracy_std)
         logging.info("Recall: %f ±%f", self.recall, self.recall_std)
         logging.info("Precision: %f ±%f", self.precision, self.precision_std)
-        logging.info("Average Precision: %f ±%f", self.average_precision, self.average_precision_std)
+        logging.info(
+            "Average Precision: %f ±%f",
+            self.average_precision,
+            self.average_precision_std,
+        )
         logging.info("AUC: %f ±%f", self.auc, self.auc_std)
         # Let's log the model metrics on the parent run.
         mlflow.set_tracking_uri(self.mlflow_tracking_uri)
@@ -384,7 +430,40 @@ class Training(FlowSpec, FlowMixin):
         # After we finish evaluating the cross-validation process, we can send the flow
         # to the registration step to register where we'll register the final version of
         # the model.
+        self.register_current_model = self._check_run_better_than_last(
+            accuracy=self.accuracy
+        )
         self.next(self.register_model)
+
+    def _check_run_better_than_last(self, accuracy: float) -> bool:
+        """Check if the current run is better than the last run.
+
+        Args:
+            accuracy: The accuracy of the current run.
+
+        Returns:
+            True if the current run is better than the last run, False otherwise.
+        """
+        import mlflow
+        from mlflow.entities import ViewType
+
+        mlflow.set_tracking_uri(self.mlflow_tracking_uri)
+        # Fix this: it currently retrieves the same run as it has already been registered
+        runs = mlflow.search_runs(
+            experiment_ids=[mlflow.get_experiment_by_name("penguins").experiment_id],
+            filter_string=f"status = 'FINISHED' AND run_id != '{self.mlflow_run_id}'",
+            order_by=["start_time DESC"],
+            # each experiment run has n_splits + 1 runs
+            # the current run has been registered already so we need the n_splits + 1
+            # runs before it
+            # max_results=2 * (self.n_splits + 1), #
+            run_view_type=ViewType.ACTIVE_ONLY,
+        )
+
+        if runs.empty:
+            return True  # First run should always register
+
+        return accuracy > runs["metrics.cross_validation_accuracy"].max()
 
     @card
     @step
@@ -474,7 +553,7 @@ class Training(FlowSpec, FlowMixin):
 
         # We only want to register the model if its accuracy is above the threshold
         # specified by the `accuracy_threshold` parameter.
-        if self.accuracy >= self.accuracy_threshold:
+        if self.accuracy >= self.accuracy_threshold and self.register_current_model:
             logging.info("Registering model...")
 
             # We'll register the model under the experiment we started at the beginning
@@ -501,12 +580,18 @@ class Training(FlowSpec, FlowMixin):
                     example_no_conversion=True,
                 )
         else:
-            logging.info(
-                "The accuracy of the model (%.2f) is lower than the accuracy threshold "
-                "(%.2f). Skipping model registration.",
-                self.accuracy,
-                self.accuracy_threshold,
-            )
+            if not self.accuracy >= self.accuracy_threshold:
+                logging.info(
+                    "The accuracy of the model (%.2f) is lower than the accuracy "
+                    "threshold (%.2f). Skipping model registration.",
+                    self.accuracy,
+                    self.accuracy_threshold,
+                )
+            if not self.register_current_model:
+                logging.info(
+                    "The current model has lower accuracy than the best model "
+                    "registered so far. Skipping model registration."
+                )
 
         # Let's now move to the final step of the pipeline.
         self.next(self.end)
