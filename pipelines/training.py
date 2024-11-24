@@ -153,7 +153,7 @@ class Training(FlowSpec, FlowMixin):
         # Now that everything is set up, we want to run a cross-validation process
         # to evaluate the model and train a final model on the entire dataset. Since
         # these two steps are independent, we can run them in parallel.
-        self.next(self.cross_validation)
+        self.next(self.cross_validation, self.transform)
 
     @card
     @step
@@ -164,7 +164,7 @@ class Training(FlowSpec, FlowMixin):
 
         if self.n_splits > 1:
             logging.info("Using %d-fold cross-validation", self.n_splits)
-            # We are going to use a 5-fold cross-validation process to evaluate the 
+            # We are going to use a 5-fold cross-validation process to evaluate the
             # model, so let's set it up. We'll shuffle the data before splitting it into
             # batches.
             kfold = KFold(
@@ -447,76 +447,76 @@ class Training(FlowSpec, FlowMixin):
         # Store transformers from first fold for inference
         self.features_transformer = inputs[0].features_transformer
         self.target_transformer = inputs[0].target_transformer
-        
+
         # Create ensemble from all fold models
         fold_models = [fold.model for fold in inputs]
         self.ensemble_model = build_ensemble_model(fold_models)
 
         self.next(self.register_model)
 
-    # @card
-    # @step
-    # def transform(self):
-    #     """Apply the transformation pipeline to the entire dataset.
+    @card
+    @step
+    def transform(self):
+        """Apply the transformation pipeline to the entire dataset.
 
-    #     This function transforms the columns of the entire dataset because we'll
-    #     use all of the data to train the final model.
+        This function transforms the columns of the entire dataset because we'll
+        use all of the data to train the final model.
 
-    #     We want to store the transformers as artifacts so we can later use them
-    #     to transform the input data during inference.
-    #     """
-    #     # Let's build the SciKit-Learn pipeline to process the target column and use it
-    #     # to transform the data.
-    #     self.target_transformer = build_target_transformer()
-    #     self.y = self.target_transformer.fit_transform(
-    #         self.data.species.to_numpy().reshape(-1, 1),
-    #     )
+        We want to store the transformers as artifacts so we can later use them
+        to transform the input data during inference.
+        """
+        # Let's build the SciKit-Learn pipeline to process the target column and use it
+        # to transform the data.
+        self.target_transformer = build_target_transformer()
+        self.y = self.target_transformer.fit_transform(
+            self.data.species.to_numpy().reshape(-1, 1),
+        )
 
-    #     # Let's build the SciKit-Learn pipeline to process the feature columns and use
-    #     # it to transform the training.
-    #     self.features_transformer = build_features_transformer()
-    #     self.x = self.features_transformer.fit_transform(self.data)
+        # Let's build the SciKit-Learn pipeline to process the feature columns and use
+        # it to transform the training.
+        self.features_transformer = build_features_transformer()
+        self.x = self.features_transformer.fit_transform(self.data)
 
-    #     # Now that we have transformed the data, we can train the final model.
-    #     self.next(self.train_model)
+        # Now that we have transformed the data, we can train the final model.
+        self.next(self.train_model)
 
-    # @card
-    # @environment(
-    #     vars={
-    #         "KERAS_BACKEND": os.getenv("KERAS_BACKEND", "jax"),
-    #     },
-    # )
-    # @resources(memory=4096)
-    # @step
-    # def train_model(self):
-    #     """Train the model that will be deployed to production.
+    @card
+    @environment(
+        vars={
+            "KERAS_BACKEND": os.getenv("KERAS_BACKEND", "jax"),
+        },
+    )
+    @resources(memory=4096)
+    @step
+    def train_model(self):
+        """Train the model that will be deployed to production.
 
-    #     This function will train the model using the entire dataset.
-    #     """
-    #     import mlflow
+        This function will train the model using the entire dataset.
+        """
+        import mlflow
 
-    #     # Let's log the training process under the experiment we started at the
-    #     # beginning of the flow.
-    #     mlflow.set_tracking_uri(self.mlflow_tracking_uri)
-    #     with mlflow.start_run(run_id=self.mlflow_run_id):
-    #         # Let's disable the automatic logging of models during training so we
-    #         # can log the model manually during the registration step.
-    #         mlflow.autolog(log_models=False)
+        # Let's log the training process under the experiment we started at the
+        # beginning of the flow.
+        mlflow.set_tracking_uri(self.mlflow_tracking_uri)
+        with mlflow.start_run(run_id=self.mlflow_run_id):
+            # Let's disable the automatic logging of models during training so we
+            # can log the model manually during the registration step.
+            mlflow.autolog(log_models=False)
 
-    #         # Let's now build and fit the model on the entire dataset.
-    #         self.model = build_model(self.x.shape[1])
-    #         self.model.fit(
-    #             self.x,
-    #             self.y,
-    #             verbose=2,
-    #             **self.training_parameters,
-    #         )
+            # Let's now build and fit the model on the entire dataset.
+            self.model = build_model(self.x.shape[1])
+            self.model.fit(
+                self.x,
+                self.y,
+                verbose=2,
+                **self.training_parameters,
+            )
 
-    #         # Let's log the training parameters we used to train the model.
-    #         mlflow.log_params(self.training_parameters)
+            # Let's log the training parameters we used to train the model.
+            mlflow.log_params(self.training_parameters)
 
-    #     # After we finish training the model, we want to register it.
-    #     self.next(self.register_model)
+        # After we finish training the model, we want to register it.
+        self.next(self.register_model)
 
     @environment(
         vars={
@@ -524,7 +524,7 @@ class Training(FlowSpec, FlowMixin):
         },
     )
     @step
-    def register_model(self):
+    def register_model(self, inputs):
         """Register the model in the Model Registry.
 
         This function will prepare and register the final model in the Model Registry.
@@ -533,19 +533,32 @@ class Training(FlowSpec, FlowMixin):
         We'll only register the model if its accuracy is above a predefined threshold.
         """
         import tempfile
-
         import mlflow
 
-        # # Since this is a join step, we need to merge the artifacts from the incoming
-        # # branches to make them available here.
-        # self.merge_artifacts(inputs)
+        # Since this is a join step, we need to merge the artifacts from the incoming
+        # branches to make them available here.
+        # Explicitly set transformers (using the ones from full training)
+        # needs to happen before merge_artifacts
+        cv_input = [i for i in inputs if hasattr(i, "ensemble_model")][0]
+        full_input = [i for i in inputs if hasattr(i, "model")][0]
+
+        self.features_transformer = full_input.features_transformer
+        self.target_transformer = full_input.target_transformer
+
+        self.ensemble_model = cv_input.ensemble_model
+        self.model = full_input.model
+        self.accuracy = cv_input.accuracy  # Use CV accuracy for threshold check
+
+        self.merge_artifacts(inputs)
 
         # After we finish evaluating the cross-validation process, we can send the flow
         # to the registration step to register where we'll register the final version of
         # the model.
-        better_than_best = self._check_run_better_than_best(
-            accuracy=self.accuracy
-        ) if self.register_only_if_better else True
+        better_than_best = (
+            self._check_run_better_than_best(accuracy=self.accuracy)
+            if self.register_only_if_better
+            else True
+        )
 
         # We only want to register the model if its accuracy is above the threshold
         # specified by the `accuracy_threshold` parameter and if accuracy is better
@@ -561,22 +574,39 @@ class Training(FlowSpec, FlowMixin):
                 mlflow.start_run(run_id=self.mlflow_run_id),
                 tempfile.TemporaryDirectory() as directory,
             ):
-                # We can now register the model using the name "penguins" in the Model
-                # Registry. This will automatically create a new version of the model.
+                # Register ensemble model
                 mlflow.pyfunc.log_model(
                     python_model=Model(data_capture=False),
-                    registered_model_name="penguins",
+                    registered_model_name="penguins_ensemble",
                     artifact_path="model",
                     code_paths=[
                         (Path(__file__).parent / "inference.py").as_posix(),
                         (Path(__file__).parent / "common.py").as_posix(),
                     ],
-                    artifacts=self._get_model_artifacts(directory),
+                    artifacts=self._get_model_artifacts(directory, is_ensemble=True),
                     pip_requirements=self._get_model_pip_requirements(),
                     signature=self._get_model_signature(),
                     # Our model expects a Python dictionary, so we want to save the
                     # input example directly as it is by setting`example_no_conversion`
                     # to `True`.
+                    example_no_conversion=True,
+                )
+            # Register single model
+            with (
+                mlflow.start_run(run_id=self.mlflow_run_id),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                mlflow.pyfunc.log_model(
+                    python_model=Model(data_capture=False),
+                    registered_model_name="penguins_single",
+                    artifact_path="single_model",
+                    code_paths=[
+                        (Path(__file__).parent / "inference.py").as_posix(),
+                        (Path(__file__).parent / "common.py").as_posix(),
+                    ],
+                    artifacts=self._get_model_artifacts(directory, is_ensemble=False),
+                    pip_requirements=self._get_model_pip_requirements(),
+                    signature=self._get_model_signature(),
                     example_no_conversion=True,
                 )
         else:
@@ -625,19 +655,21 @@ class Training(FlowSpec, FlowMixin):
     @staticmethod
     def _get_previous_runs(mlflow_client, current_run_id: str) -> pd.DataFrame:
         """Get previous non-nested runs, excluding the current run and its children.
-        
+
         Args:
             mlflow_client: MLflow client instance
             current_run_id: ID of the current run to exclude
-        
+
         Returns:
             DataFrame containing filtered runs
         """
         from mlflow.entities import ViewType
 
-        # Get all runs first 
+        # Get all runs first
         all_runs = mlflow_client.search_runs(
-            experiment_ids=[mlflow_client.get_experiment_by_name("penguins").experiment_id],
+            experiment_ids=[
+                mlflow_client.get_experiment_by_name("penguins").experiment_id
+            ],
             filter_string=(
                 "status = 'FINISHED' "
                 f"AND run_id != '{current_run_id}'"  # Exclude current main run
@@ -645,11 +677,19 @@ class Training(FlowSpec, FlowMixin):
             order_by=["start_time DESC"],
             run_view_type=ViewType.ACTIVE_ONLY,
         )
-        
+
         # Filter out nested runs and runs where current run is the parent
         return all_runs[
-            (~all_runs['tags.mlflow.runName'].str.contains('cross-validation', na=False)) &
-            (~all_runs['tags.mlflow.parentRunId'].fillna('').str.contains(current_run_id))
+            (
+                ~all_runs["tags.mlflow.runName"].str.contains(
+                    "cross-validation", na=False
+                )
+            )
+            & (
+                ~all_runs["tags.mlflow.parentRunId"]
+                .fillna("")
+                .str.contains(current_run_id)
+            )
         ]
 
     @step
@@ -657,7 +697,7 @@ class Training(FlowSpec, FlowMixin):
         """End the Training pipeline."""
         logging.info("The pipeline finished successfully.")
 
-    def _get_model_artifacts(self, directory: str):
+    def _get_model_artifacts(self, directory: str, is_ensemble: bool):
         """Return the list of artifacts that will be included with model.
 
         The model must preprocess the raw input data before making a prediction, so we
@@ -665,9 +705,11 @@ class Training(FlowSpec, FlowMixin):
         """
         import joblib
 
-        # Let's start by saving the model inside the supplied directory.
         model_path = (Path(directory) / "model.joblib").as_posix()
-        joblib.dump(self.ensemble_model, model_path)
+        if is_ensemble:
+            joblib.dump(self.ensemble_model, model_path)
+        else:
+            joblib.dump(self.model, model_path)
 
         # We also want to save the Scikit-Learn transformers so we can package them
         # with the model and use them during inference.
