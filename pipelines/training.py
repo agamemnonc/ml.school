@@ -2,6 +2,8 @@ import logging
 import os
 from pathlib import Path
 
+import pandas as pd
+
 from common import (
     PYTHON,
     TRAINING_BATCH_SIZE,
@@ -76,6 +78,16 @@ class Training(FlowSpec, FlowMixin):
     debugging_mode = Parameter(
         "debug",
         help="Run the flow in debug mode.",
+        default=False,
+        is_flag=True,
+    )
+
+    register_only_if_better = Parameter(
+        "register-only-if-better",
+        help=(
+            "Only register the model if its accuracy is better than the best model "
+            "registered so far."
+        ),
         default=False,
         is_flag=True,
     )
@@ -427,43 +439,7 @@ class Training(FlowSpec, FlowMixin):
                 },
             )
 
-        # After we finish evaluating the cross-validation process, we can send the flow
-        # to the registration step to register where we'll register the final version of
-        # the model.
-        self.register_current_model = self._check_run_better_than_last(
-            accuracy=self.accuracy
-        )
         self.next(self.register_model)
-
-    def _check_run_better_than_last(self, accuracy: float) -> bool:
-        """Check if the current run is better than the last run.
-
-        Args:
-            accuracy: The accuracy of the current run.
-
-        Returns:
-            True if the current run is better than the last run, False otherwise.
-        """
-        import mlflow
-        from mlflow.entities import ViewType
-
-        mlflow.set_tracking_uri(self.mlflow_tracking_uri)
-        # Fix this: it currently retrieves the same run as it has already been registered
-        runs = mlflow.search_runs(
-            experiment_ids=[mlflow.get_experiment_by_name("penguins").experiment_id],
-            filter_string=f"status = 'FINISHED' AND run_id != '{self.mlflow_run_id}'",
-            order_by=["start_time DESC"],
-            # each experiment run has n_splits + 1 runs
-            # the current run has been registered already so we need the n_splits + 1
-            # runs before it
-            # max_results=2 * (self.n_splits + 1), #
-            run_view_type=ViewType.ACTIVE_ONLY,
-        )
-
-        if runs.empty:
-            return True  # First run should always register
-
-        return accuracy > runs["metrics.cross_validation_accuracy"].max()
 
     @card
     @step
@@ -551,9 +527,17 @@ class Training(FlowSpec, FlowMixin):
         # branches to make them available here.
         self.merge_artifacts(inputs)
 
+        # After we finish evaluating the cross-validation process, we can send the flow
+        # to the registration step to register where we'll register the final version of
+        # the model.
+        better_than_best = self._check_run_better_than_best(
+            accuracy=self.accuracy
+        ) if self.register_only_if_better else True
+
         # We only want to register the model if its accuracy is above the threshold
-        # specified by the `accuracy_threshold` parameter.
-        if self.accuracy >= self.accuracy_threshold and self.register_current_model:
+        # specified by the `accuracy_threshold` parameter and if accuracy is better
+        # than the best model registered so far.
+        if self.accuracy >= self.accuracy_threshold and better_than_best:
             logging.info("Registering model...")
 
             # We'll register the model under the experiment we started at the beginning
@@ -595,6 +579,62 @@ class Training(FlowSpec, FlowMixin):
 
         # Let's now move to the final step of the pipeline.
         self.next(self.end)
+
+    def _check_run_better_than_best(self, accuracy: float) -> bool:
+        """Check if the current run is better than the best registered run.
+
+        Args:
+            accuracy: The accuracy of the current run.
+
+        Returns:
+            True if the current run is better than the last run, False otherwise.
+        """
+        import mlflow
+
+        mlflow.set_tracking_uri(self.mlflow_tracking_uri)
+        runs = self._get_previous_runs(mlflow, self.mlflow_run_id)
+
+        if runs.empty:
+            return True  # First run should always register
+
+        register = accuracy > runs["metrics.cross_validation_accuracy"].max()
+        if not register:
+            logging.info(
+                f"The accuracy of the model ({accuracy:.2f}) is lower than the accuracy "
+                f"of the best model registered so far ({runs['metrics.cross_validation_accuracy'].max():.2f}). "
+                "Skipping model registration.",
+            )
+        return register
+
+    @staticmethod
+    def _get_previous_runs(mlflow_client, current_run_id: str) -> pd.DataFrame:
+        """Get previous non-nested runs, excluding the current run and its children.
+        
+        Args:
+            mlflow_client: MLflow client instance
+            current_run_id: ID of the current run to exclude
+        
+        Returns:
+            DataFrame containing filtered runs
+        """
+        from mlflow.entities import ViewType
+
+        # Get all runs first 
+        all_runs = mlflow_client.search_runs(
+            experiment_ids=[mlflow_client.get_experiment_by_name("penguins").experiment_id],
+            filter_string=(
+                "status = 'FINISHED' "
+                f"AND run_id != '{current_run_id}'"  # Exclude current main run
+            ),
+            order_by=["start_time DESC"],
+            run_view_type=ViewType.ACTIVE_ONLY,
+        )
+        
+        # Filter out nested runs and runs where current run is the parent
+        return all_runs[
+            (~all_runs['tags.mlflow.runName'].str.contains('cross-validation', na=False)) &
+            (~all_runs['tags.mlflow.parentRunId'].fillna('').str.contains(current_run_id))
+        ]
 
     @step
     def end(self):
