@@ -190,28 +190,34 @@ def build_model(input_shape, learning_rate=0.01):
 
     return model
 
+
 @keras.saving.register_keras_serializable(package="MyModels")
 class KerasEnsemble(KerasModel):
     def __init__(self, models: list[KerasModel], **kwargs) -> None:
         super().__init__(**kwargs)
         self.models = models
-    
+
     def call(self, inputs, training=None):
         predictions = [model(inputs, training=training) for model in self.models]
         return np.mean(predictions, axis=0)
-    
+
     def get_config(self):
         config = super().get_config()
-        config.update({
-            "models": [keras.saving.serialize_keras_object(model) for model in self.models]
-        })
+        config.update(
+            {
+                "models": [
+                    keras.saving.serialize_keras_object(model) for model in self.models
+                ]
+            }
+        )
         return config
-    
+
     @classmethod
     def from_config(cls, config):
         models_config = config.pop("models")
         models = [keras.saving.deserialize_keras_object(c) for c in models_config]
         return cls(models=models, **config)
+
 
 def build_ensemble_model(models: list[KerasModel]):
     """Build an ensemble model from a list of models."""
