@@ -17,6 +17,7 @@ from common import (
     build_target_transformer,
     configure_logging,
     packages,
+    build_ensemble_model,
 )
 from inference import Model
 from metaflow import (
@@ -152,7 +153,7 @@ class Training(FlowSpec, FlowMixin):
         # Now that everything is set up, we want to run a cross-validation process
         # to evaluate the model and train a final model on the entire dataset. Since
         # these two steps are independent, we can run them in parallel.
-        self.next(self.cross_validation, self.transform)
+        self.next(self.cross_validation)
 
     @card
     @step
@@ -226,6 +227,10 @@ class Training(FlowSpec, FlowMixin):
         self.x_test = features_transformer.transform(
             self.data.iloc[self.test_indices],
         )
+
+        # Store transformers as attributes
+        self.features_transformer = features_transformer
+        self.target_transformer = target_transformer
 
         # After processing the data and storing it as artifacts in the flow, we want
         # to train a model.
@@ -439,79 +444,87 @@ class Training(FlowSpec, FlowMixin):
                 },
             )
 
+        # Store transformers from first fold for inference
+        self.features_transformer = inputs[0].features_transformer
+        self.target_transformer = inputs[0].target_transformer
+        
+        # Create ensemble from all fold models
+        fold_models = [fold.model for fold in inputs]
+        self.ensemble_model = build_ensemble_model(fold_models)
+
         self.next(self.register_model)
 
-    @card
-    @step
-    def transform(self):
-        """Apply the transformation pipeline to the entire dataset.
+    # @card
+    # @step
+    # def transform(self):
+    #     """Apply the transformation pipeline to the entire dataset.
 
-        This function transforms the columns of the entire dataset because we'll
-        use all of the data to train the final model.
+    #     This function transforms the columns of the entire dataset because we'll
+    #     use all of the data to train the final model.
 
-        We want to store the transformers as artifacts so we can later use them
-        to transform the input data during inference.
-        """
-        # Let's build the SciKit-Learn pipeline to process the target column and use it
-        # to transform the data.
-        self.target_transformer = build_target_transformer()
-        self.y = self.target_transformer.fit_transform(
-            self.data.species.to_numpy().reshape(-1, 1),
-        )
+    #     We want to store the transformers as artifacts so we can later use them
+    #     to transform the input data during inference.
+    #     """
+    #     # Let's build the SciKit-Learn pipeline to process the target column and use it
+    #     # to transform the data.
+    #     self.target_transformer = build_target_transformer()
+    #     self.y = self.target_transformer.fit_transform(
+    #         self.data.species.to_numpy().reshape(-1, 1),
+    #     )
 
-        # Let's build the SciKit-Learn pipeline to process the feature columns and use
-        # it to transform the training.
-        self.features_transformer = build_features_transformer()
-        self.x = self.features_transformer.fit_transform(self.data)
+    #     # Let's build the SciKit-Learn pipeline to process the feature columns and use
+    #     # it to transform the training.
+    #     self.features_transformer = build_features_transformer()
+    #     self.x = self.features_transformer.fit_transform(self.data)
 
-        # Now that we have transformed the data, we can train the final model.
-        self.next(self.train_model)
+    #     # Now that we have transformed the data, we can train the final model.
+    #     self.next(self.train_model)
 
-    @card
+    # @card
+    # @environment(
+    #     vars={
+    #         "KERAS_BACKEND": os.getenv("KERAS_BACKEND", "jax"),
+    #     },
+    # )
+    # @resources(memory=4096)
+    # @step
+    # def train_model(self):
+    #     """Train the model that will be deployed to production.
+
+    #     This function will train the model using the entire dataset.
+    #     """
+    #     import mlflow
+
+    #     # Let's log the training process under the experiment we started at the
+    #     # beginning of the flow.
+    #     mlflow.set_tracking_uri(self.mlflow_tracking_uri)
+    #     with mlflow.start_run(run_id=self.mlflow_run_id):
+    #         # Let's disable the automatic logging of models during training so we
+    #         # can log the model manually during the registration step.
+    #         mlflow.autolog(log_models=False)
+
+    #         # Let's now build and fit the model on the entire dataset.
+    #         self.model = build_model(self.x.shape[1])
+    #         self.model.fit(
+    #             self.x,
+    #             self.y,
+    #             verbose=2,
+    #             **self.training_parameters,
+    #         )
+
+    #         # Let's log the training parameters we used to train the model.
+    #         mlflow.log_params(self.training_parameters)
+
+    #     # After we finish training the model, we want to register it.
+    #     self.next(self.register_model)
+
     @environment(
         vars={
             "KERAS_BACKEND": os.getenv("KERAS_BACKEND", "jax"),
         },
     )
-    @resources(memory=4096)
     @step
-    def train_model(self):
-        """Train the model that will be deployed to production.
-
-        This function will train the model using the entire dataset.
-        """
-        import mlflow
-
-        # Let's log the training process under the experiment we started at the
-        # beginning of the flow.
-        mlflow.set_tracking_uri(self.mlflow_tracking_uri)
-        with mlflow.start_run(run_id=self.mlflow_run_id):
-            # Let's disable the automatic logging of models during training so we
-            # can log the model manually during the registration step.
-            mlflow.autolog(log_models=False)
-
-            # Let's now build and fit the model on the entire dataset.
-            self.model = build_model(self.x.shape[1])
-            self.model.fit(
-                self.x,
-                self.y,
-                verbose=2,
-                **self.training_parameters,
-            )
-
-            # Let's log the training parameters we used to train the model.
-            mlflow.log_params(self.training_parameters)
-
-        # After we finish training the model, we want to register it.
-        self.next(self.register_model)
-
-    @environment(
-        vars={
-            "KERAS_BACKEND": os.getenv("KERAS_BACKEND", "jax"),
-        },
-    )
-    @step
-    def register_model(self, inputs):
+    def register_model(self):
         """Register the model in the Model Registry.
 
         This function will prepare and register the final model in the Model Registry.
@@ -523,9 +536,9 @@ class Training(FlowSpec, FlowMixin):
 
         import mlflow
 
-        # Since this is a join step, we need to merge the artifacts from the incoming
-        # branches to make them available here.
-        self.merge_artifacts(inputs)
+        # # Since this is a join step, we need to merge the artifacts from the incoming
+        # # branches to make them available here.
+        # self.merge_artifacts(inputs)
 
         # After we finish evaluating the cross-validation process, we can send the flow
         # to the registration step to register where we'll register the final version of
@@ -554,7 +567,10 @@ class Training(FlowSpec, FlowMixin):
                     python_model=Model(data_capture=False),
                     registered_model_name="penguins",
                     artifact_path="model",
-                    code_paths=[(Path(__file__).parent / "inference.py").as_posix()],
+                    code_paths=[
+                        (Path(__file__).parent / "inference.py").as_posix(),
+                        (Path(__file__).parent / "common.py").as_posix(),
+                    ],
                     artifacts=self._get_model_artifacts(directory),
                     pip_requirements=self._get_model_pip_requirements(),
                     signature=self._get_model_signature(),
@@ -571,7 +587,7 @@ class Training(FlowSpec, FlowMixin):
                     self.accuracy,
                     self.accuracy_threshold,
                 )
-            if not self.register_current_model:
+            if not better_than_best:
                 logging.info(
                     "The current model has lower accuracy than the best model "
                     "registered so far. Skipping model registration."
@@ -650,8 +666,8 @@ class Training(FlowSpec, FlowMixin):
         import joblib
 
         # Let's start by saving the model inside the supplied directory.
-        model_path = (Path(directory) / "model.keras").as_posix()
-        self.model.save(model_path)
+        model_path = (Path(directory) / "model.joblib").as_posix()
+        joblib.dump(self.ensemble_model, model_path)
 
         # We also want to save the Scikit-Learn transformers so we can package them
         # with the model and use them during inference.
