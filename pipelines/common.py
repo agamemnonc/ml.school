@@ -5,9 +5,15 @@ import sys
 import time
 from io import StringIO
 from pathlib import Path
+from glob import glob
+from typing import Any, Union
 
+import numpy as np
 import pandas as pd
-from metaflow import S3, IncludeFile, current
+from numpy.typing import NDArray
+from keras.models import Model as KerasModel
+from metaflow import S3, Parameter, current
+import keras
 
 PYTHON = "3.12"
 
@@ -32,18 +38,21 @@ PACKAGES = {
 TRAINING_EPOCHS = 50
 TRAINING_BATCH_SIZE = 32
 
+DEBUG_TRAINING_EPOCHS = 2
+DEBUG_N_SPLITS = 2
+DEBUG_DATA_FRAC = 0.1
+
 
 class FlowMixin:
     """Base class used to share code across multiple pipelines."""
 
-    dataset = IncludeFile(
-        "penguins",
-        is_text=True,
+    data_path = Parameter(
+        "data-path",
         help=(
-            "Local copy of the penguins dataset. This file will be included in the "
-            "flow and will be used whenever the flow is executed in development mode."
+            "Directory containing CSV files to process. All CSV files will be "
+            "concatenated into a single dataset."
         ),
-        default="data/penguins.csv",
+        default="data",
     )
 
     def load_dataset(self):
@@ -57,19 +66,20 @@ class FlowMixin:
         import numpy as np
 
         if current.is_production:
-            dataset = os.environ.get("DATASET", self.dataset)
+            data_path = os.environ.get("DATA_PATH", self.data_path)
 
-            with S3(s3root=dataset) as s3:
+            with S3(s3root=data_path) as s3:
                 files = s3.get_all()
-
                 logging.info("Found %d file(s) in remote location", len(files))
-
                 raw_data = [pd.read_csv(StringIO(file.text)) for file in files]
-                data = pd.concat(raw_data)
         else:
             # When running in development mode, the raw data is passed as a string,
             # so we can convert it to a DataFrame.
-            data = pd.read_csv(StringIO(self.dataset))
+            csv_files = glob(os.path.join(self.data_path, "*.csv"))
+            logging.info("Found %d CSV file(s) in local directory", len(csv_files))
+            raw_data = [pd.read_csv(f) for f in csv_files]
+
+        data = pd.concat(raw_data, ignore_index=True)
 
         # Replace extraneous values in the sex column with NaN. We can handle missing
         # values later in the pipeline.
@@ -176,7 +186,39 @@ def build_model(input_shape, learning_rate=0.01):
     model.compile(
         optimizer=optimizers.SGD(learning_rate=learning_rate),
         loss="sparse_categorical_crossentropy",
-        metrics=["accuracy"],
     )
 
     return model
+
+
+@keras.saving.register_keras_serializable(package="MyModels")
+class KerasEnsemble(KerasModel):
+    def __init__(self, models: list[KerasModel], **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.models = models
+
+    def call(self, inputs, training=None):
+        predictions = [model(inputs, training=training) for model in self.models]
+        return np.mean(predictions, axis=0)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update(
+            {
+                "models": [
+                    keras.saving.serialize_keras_object(model) for model in self.models
+                ]
+            }
+        )
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        models_config = config.pop("models")
+        models = [keras.saving.deserialize_keras_object(c) for c in models_config]
+        return cls(models=models, **config)
+
+
+def build_ensemble_model(models: list[KerasModel]):
+    """Build an ensemble model from a list of models."""
+    return KerasEnsemble(models=models)
