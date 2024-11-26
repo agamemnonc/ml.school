@@ -211,7 +211,7 @@ class Model(mlflow.pyfunc.PythonModel):
 
             # Let's also add a column to store the ground truth. This column can be
             # used by the labeling team to provide the actual species for the data.
-            data["species"] = None
+            data["ground_truth"] = None
 
             # If the model output is not empty, we should update the prediction and
             # confidence columns with the corresponding values.
