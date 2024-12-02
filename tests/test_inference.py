@@ -3,6 +3,7 @@ import sqlite3
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock
+import json
 
 import numpy as np
 import pandas as pd
@@ -216,3 +217,119 @@ def test_capture_on_invalid_output(model, monkeypatch):
     # The prediction and confidence columns should be None because the output
     # from the model was empty
     assert data == ("Torgersen", None, None)
+
+
+def test_init_with_invalid_data_collection_config():
+    """Test that initializing with both URI and output file raises an error."""
+    with pytest.raises(ValueError) as exc_info:
+        Model(
+            data_collection_uri="test.db",
+            data_collection_output_file="output.jsonl",
+            data_capture=True,
+        )
+    assert (
+        "both data collection uri and output file are specified. please specify "
+        "only one of them." in str(exc_info.value).lower()
+    )
+
+
+def test_capture_to_jsonl_file(model, tmp_path):
+    """Test data capture to JSONL file."""
+    output_file = tmp_path / "output.jsonl"
+    model.data_collection_uri = None
+    model.data_collection_output_file = str(output_file)
+
+    model.predict(
+        context=None,
+        model_input=[{"island": "Torgersen"}],
+        params={"data_capture": True},
+    )
+
+    assert output_file.exists()
+    with open(output_file) as f:
+        data = json.loads(f.readline())
+        assert data["island"] == "Torgersen"
+        assert data["prediction"] == "Adelie"
+        assert data["confidence"] == 0.6
+        assert "date" in data
+        assert "uuid" in data
+
+
+@pytest.mark.parametrize(
+    ("env_uri", "env_file", "expected_uri", "expected_file"),
+    [
+        ("env.db", None, "env.db", None),
+        (None, "env.jsonl", None, "env.jsonl"),
+        (None, None, "penguins.db", None),
+    ],
+)
+def test_environment_variables_override(
+    mock_keras_model,
+    mock_transformers,
+    monkeypatch,
+    env_uri,
+    env_file,
+    expected_uri,
+    expected_file,
+):
+    """Test environment variables override model configuration."""
+    if env_uri:
+        monkeypatch.setenv("DATA_COLLECTION_URI", env_uri)
+    if env_file:
+        monkeypatch.setenv("DATA_COLLECTION_OUTPUT_FILE", env_file)
+
+    model = Model(
+        data_collection_uri=expected_uri, data_collection_output_file=expected_file
+    )
+    mock_context = Mock()
+    mock_context.artifacts = {
+        "model": "model",
+        "features_transformer": "features_transformer",
+        "target_transformer": "target_transformer",
+    }
+
+    model.load_context(mock_context)
+
+    assert model.data_collection_uri == expected_uri
+    assert model.data_collection_output_file == expected_file
+
+
+def test_capture_handles_database_error(model, monkeypatch):
+    """Test that database errors are handled gracefully during capture."""
+
+    def mock_connect(*args, **kwargs):
+        raise sqlite3.Error("Database error")
+
+    monkeypatch.setattr("sqlite3.connect", mock_connect)
+
+    # Should not raise an exception
+    model.predict(
+        context=None,
+        model_input=[{"island": "Torgersen"}],
+        params={"data_capture": True},
+    )
+
+
+def test_predict_with_dict_input(model):
+    """Test that predict handles dictionary input correctly."""
+    input_data = {"island": "Torgersen", "culmen_length_mm": 39.1}
+    result = model.predict(context=None, model_input=input_data)
+    assert len(result) == 1
+    assert result[0]["prediction"] == "Adelie"
+
+
+@pytest.mark.parametrize(
+    ("input_data", "expected_len"),
+    [
+        (pd.DataFrame(), 0),
+        (pd.DataFrame([{"island": "Invalid"}]), 1),
+        (pd.DataFrame([{"island": "A"}, {"island": "B"}]), 2),
+    ],
+)
+def test_process_input_with_different_sizes(model, input_data, expected_len):
+    """Test process_input handles different input sizes correctly."""
+    model.features_transformer.transform = Mock(
+        return_value=np.zeros((expected_len, 2))
+    )
+    result = model.process_input(input_data)
+    assert len(result) == expected_len

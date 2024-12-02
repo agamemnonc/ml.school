@@ -52,6 +52,8 @@ class Model(mlflow.pyfunc.PythonModel):
         self.data_collection_uri = data_collection_uri
         self.data_collection_output_file = data_collection_output_file
 
+        self._configure_data_collection()
+
     def _configure_data_collection(self) -> None:
         """Configure data collection behavior.
 
@@ -137,8 +139,11 @@ class Model(mlflow.pyfunc.PythonModel):
         The caller can specify whether we should capture the input request and
         prediction by using the `data_capture` parameter when making a request.
         """
-        if isinstance(model_input, list | dict):
+        if isinstance(model_input, list):
             model_input = pd.DataFrame(model_input)
+
+        if isinstance(model_input, dict):
+            model_input = pd.DataFrame([model_input])
 
         logging.info(
             "Received prediction request with %d %s",
