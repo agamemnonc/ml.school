@@ -85,22 +85,33 @@ def test_process_input(model):
     result = model.process_input(input_data)
 
     # Ensure the transform method is called with the input data.
-    model.features_transformer.transform.assert_called_once_with(input_data)
+    model.features_transformer.transform.assert_called_with(input_data)
+    assert model.features_transformer.transform.call_count == 1
 
     # The function should return the transformed data.
     assert np.array_equal(result, np.array([[0.1, 0.2]]))
 
 
-def test_process_input_return_none_on_exception(model):
+def test_process_input_return_empty_array_on_exception(model):
     model.features_transformer.transform = Mock(side_effect=Exception("Invalid input"))
     input_data = pd.DataFrame({"island": ["Torgersen"]})
     result = model.process_input(input_data)
 
-    # We want to make sure that the transform method is called with the input data.
-    model.features_transformer.transform.assert_called_once_with(input_data)
+    # The transform method should be called twice: once for the entire DataFrame and
+    # once for each row individually (fallback mechanism).
+    assert model.features_transformer.transform.call_count == 2
 
-    # Since there was an exception, the function should return None.
-    assert result is None
+    # Check that it was called with both the DataFrame and a single-row DataFrame
+    call_args_list = model.features_transformer.transform.call_args_list
+    assert isinstance(
+        call_args_list[0][0][0], pd.DataFrame
+    )  # First call with DataFrame
+    assert isinstance(
+        call_args_list[1][0][0], pd.DataFrame
+    )  # Second call with single-row DataFrame
+
+    # Since there was an exception, the function should return an empty array.
+    assert result.size == 0
 
 
 def test_process_output(model):

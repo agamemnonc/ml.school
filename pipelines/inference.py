@@ -125,7 +125,7 @@ class Model(mlflow.pyfunc.PythonModel):
     def predict(
         self,
         context: PythonModelContext,  # noqa: ARG002
-        model_input,
+        model_input: pd.DataFrame | dict | list,
         params: dict[str, Any] | None = None,
     ) -> list:
         """Handle the request received from the client.
@@ -185,8 +185,21 @@ class Model(mlflow.pyfunc.PythonModel):
         try:
             result = self.features_transformer.transform(payload)
         except Exception:
-            logging.exception("There was an error processing the payload.")
-            return None
+            logging.exception(
+                "There was an error processing the payload. Trying to process each row "
+                "individually..."
+            )
+            out = []
+            # Use iterrows() to get both index and row as Series
+            for _, row in payload.iterrows():
+                try:
+                    out.append(self.features_transformer.transform(pd.DataFrame([row])))
+                except Exception:
+                    logging.exception(
+                        "There was an error processing a row from the payload."
+                    )
+
+            result = np.array(out) if out else np.array([])
 
         return result
 
