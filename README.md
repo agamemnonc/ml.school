@@ -223,6 +223,39 @@ You can display the number of samples in the SQLite database by running the foll
 ```shell
 sqlite3 penguins.db "SELECT COUNT(*) FROM data;"
 ```
+### Alternative ways of deploying the model with mlflow
+
+#### Using `mlflow models predict`:
+There are a few options here:
+1. Using a sandbox environment with `pyenv`
+```shell
+mlflow models predict -m runs:/<run-id>/<model-name>  -i data/penguins.csv
+```
+
+2. Using `conda` to create an environment:
+```shell
+mlflow models predict -m runs:/<run-id>/<model-name>  -i data/penguins.csv --env-manager conda
+```
+
+3. Using the existing local environment:
+```shell
+mlflow models predict -m runs:/<run-id>/<model-name>  -i data/penguins.csv --env-manager local
+```
+#### Using `mlflow models build-docker`:
+This will create a Docker image whose default entrypoint serves an MLflow model at port 8080, using the python_function flavor.
+```shell
+mlflow models build-docker --model-uri "runs:/<run-id>/<model-name>" --name "<image-nane>"
+```
+
+Then we can spin up a container as usual
+```shell
+docker run -p 5001:8080 "image-name"
+```
+
+
+#### Python script:
+We can create post requests from a python script. The [send_csv_requests.py](scripts/send_csv_requests.py) example uses CSV files to send requests.
+
 
 ## Monitoring The Model
 

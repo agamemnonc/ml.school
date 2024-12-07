@@ -1,8 +1,8 @@
-python-dotenv
+python-dotenv==1.0.1
 pytest
 pylint
 
-mlflow
+mlflow==2.17.1
 mlflow[extras]
 mlserver
 mlserver-mlflow
@@ -12,10 +12,10 @@ packaging
 setuptools
 evidently
 keras
-scikit-learn
-pandas
-numpy
-jax[cpu]
+scikit-learn==1.5.2
+pandas==2.2.3
+numpy==2.1.1
+jax[cpu]==0.4.35
 seaborn
 pingouin
 black[jupyter]
@@ -24,5 +24,5 @@ psutil
 metaflow
 metaflow-card-html
 
-azure-ai-ml
-azureml-mlflow
+azure-ai-ml==1.19.0
+azureml-mlflow==1.57.0.post1
