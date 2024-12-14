@@ -18,8 +18,11 @@ numpy==2.1.1
 jax[cpu]==0.4.35
 seaborn
 pingouin
+flake8
 black[jupyter]
 psutil
+
+litgpt[all]
 
 metaflow
 metaflow-card-html
