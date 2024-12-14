@@ -86,8 +86,6 @@ class Model(mlflow.pyfunc.PythonModel):
         if not os.getenv("KERAS_BACKEND"):
             os.environ["KERAS_BACKEND"] = "jax"
 
-        import keras
-
         self._configure_logging()
         logging.info("Loading model context...")
 
@@ -119,8 +117,8 @@ class Model(mlflow.pyfunc.PythonModel):
         )
         self.target_transformer = joblib.load(context.artifacts["target_transformer"])
 
-        # Then, we can load the Keras model we trained.
-        self.model = keras.saving.load_model(context.artifacts["model"])
+        # Then, we can load the model we trained (using joblib instead of keras.saving)
+        self.model = joblib.load(context.artifacts["model"])
 
         logging.info("Model is ready to receive requests")
 
