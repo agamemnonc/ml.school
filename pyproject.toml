@@ -1,3 +1,36 @@
+[project]
+name = "ml-school"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mlflow[extras]>=2.19.0",
+    "mlserver-mlflow>=1.6.1",
+    "mlserver>=1.6.1",
+    "python-dotenv>=1.0.1",
+    "pytest>=8.3.4",
+    "pylint>=3.3.2",
+    "awscurl>=0.36",
+    "packaging>=24.2",
+    "setuptools>=75.6.0",
+    "evidently>=0.5.1",
+    "keras>=3.7.0",
+    "scikit-learn>=1.5.2",
+    "pandas>=2.2.3",
+    "numpy>=2.0.2",
+    "jax[cpu]>=0.4.37",
+    "seaborn>=0.13.2",
+    "pingouin>=0.5.5",
+    "flake8>=7.1.1",
+    "black[jupyter]>=24.10.0",
+    "psutil>=6.1.0",
+    "metaflow>=2.12.39",
+    "metaflow-card-html>=1.0.2",
+    "azure-ai-ml>=1.22.4",
+    "azureml-mlflow>=1.58.0",
+]
+
 [tool.ruff]
 line-length = 88
 indent-width = 4
