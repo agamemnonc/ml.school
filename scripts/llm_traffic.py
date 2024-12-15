@@ -5,7 +5,6 @@ import argparse
 import numpy as np
 import requests
 import pandas as pd
-from litgpt import LLM
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -68,6 +67,10 @@ def get_prompt(data: pd.DataFrame) -> str:
     {data.to_json(orient="records")}
     """
 
+
+def get_mock_model() -> None:
+    """Get a mock model."""
+    return None
 
 def get_mock_response(prompt: str, n_samples: int = 10) -> list[dict]:
     """Get a mock response for the model.
@@ -140,7 +143,7 @@ def main():
     logger.info("Data loaded.")
 
     logger.info("Loading model...")
-    model = LLM.load(args.model)  # noqa: F841
+    model = get_mock_model()  # noqa: F841
     logger.info("Model loaded.")
 
     logger.info("Generatin prompt...")
