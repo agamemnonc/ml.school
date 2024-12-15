@@ -36,7 +36,7 @@ jobs:
         run: pip install uv
 
       - name: Install dependencies with uv
-        run: uv install
+        run: uv sync
 
       - name: Start MLflow server
         run: |
