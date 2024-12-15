@@ -17,7 +17,7 @@ PYTHON = "3.12"
 
 PACKAGES = {
     "scikit-learn": "1.5.2",
-    "pandas": "2.2.3",
+    "pandas": "2.2.2",
     "numpy": "2.0.2",
     "keras": "3.6.0",
     "jax[cpu]": "0.4.37",
