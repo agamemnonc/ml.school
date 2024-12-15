@@ -30,21 +30,18 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: "pip" # Changed from poetry to pip for now
+          cache: "pip"
 
-      - name: Install Poetry
-        run: |
-          curl -sSL https://install.python-poetry.org | python3 -
+      - name: Install uv
+        run: pip install uv
 
-      - name: Configure Poetry
-        run: |
-          poetry config virtualenvs.create false
-          poetry install --no-interaction
+      - name: Install dependencies
+        run: uv pip install -r <(uv pip freeze)
 
       - name: Start MLflow server
         run: |
           mlflow server --host 0.0.0.0 --port 5000 &
-          sleep 5  # Wait for server to start
+          sleep 5
 
       - name: Run training pipeline
         run: python pipelines/training.py --environment=pypi run
