@@ -17,7 +17,7 @@ dependencies = [
     "evidently>=0.5.1",
     "keras>=3.7.0",
     "scikit-learn>=1.5.2",
-    "pandas>=2.2.2",
+    "pandas==2.2.2",
     "numpy>=2.0.2",
     "jax[cpu]>=0.4.37",
     "seaborn>=0.13.2",
