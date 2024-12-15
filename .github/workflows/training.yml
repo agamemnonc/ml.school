@@ -5,19 +5,19 @@ on:
     branches:
       - main
     paths:
-      - 'pipelines/**'
-      - '.github/workflows/training.yml'
+      - "pipelines/**"
+      - ".github/workflows/training.yml"
   pull_request:
     branches:
       - main
     paths:
-      - 'pipelines/**'
-      - '.github/workflows/training.yml'
+      - "pipelines/**"
+      - ".github/workflows/training.yml"
 
 jobs:
   train:
     runs-on: ubuntu-latest
-    
+
     env:
       MLFLOW_TRACKING_URI: http://localhost:5000
       KERAS_BACKEND: jax
@@ -29,17 +29,19 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-          cache: 'pip'
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install uv
+        run: pip install uv
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
+        run: uv pip install --system .
 
       - name: Start MLflow server
         run: |
           mlflow server --host 0.0.0.0 --port 5000 &
-          sleep 5  # Wait for server to start
+          sleep 5
 
       - name: Run training pipeline
         run: python pipelines/training.py --environment=pypi run
