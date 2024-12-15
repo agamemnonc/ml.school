@@ -33,7 +33,7 @@ jobs:
           cache: "pip"
 
       - name: Install dependencies
-        run: pip install .
+        run: pip install -e .
 
       - name: Start MLflow server
         run: |
