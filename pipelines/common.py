@@ -195,7 +195,7 @@ def get_keras_ensemble_class():
     import keras
     import numpy as np
 
-    @keras.saving.register_keras_serializable(package="MyModels") 
+    @keras.saving.register_keras_serializable(package="MyModels")
     class KerasEnsemble(KerasModel):
         def __init__(self, models: list["KerasModel"], **kwargs) -> None:
             super().__init__(**kwargs)
@@ -210,7 +210,8 @@ def get_keras_ensemble_class():
             config.update(
                 {
                     "models": [
-                        keras.saving.serialize_keras_object(model) for model in self.models
+                        keras.saving.serialize_keras_object(model)
+                        for model in self.models
                     ]
                 }
             )
