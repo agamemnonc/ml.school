@@ -25,3 +25,5 @@ metaflow-tutorials/*
 
 .vscode/
 ml.school.code-workspace
+
+checkpoints/

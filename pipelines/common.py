@@ -11,16 +11,14 @@ from typing import Any, Union
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
-from keras.models import Model as KerasModel
 from metaflow import S3, Parameter, current
-import keras
 
 PYTHON = "3.12"
 
 PACKAGES = {
     "scikit-learn": "1.5.2",
     "pandas": "2.2.3",
-    "numpy": "2.1.1",
+    "numpy": "1.26.4",
     "keras": "3.6.0",
     "jax[cpu]": "0.4.35",
     "boto3": "1.35.32",
@@ -191,34 +189,43 @@ def build_model(input_shape, learning_rate=0.01):
     return model
 
 
-@keras.saving.register_keras_serializable(package="MyModels")
-class KerasEnsemble(KerasModel):
-    def __init__(self, models: list[KerasModel], **kwargs) -> None:
-        super().__init__(**kwargs)
-        self.models = models
+def get_keras_ensemble_class():
+    """Get the KerasEnsemble class with proper Keras imports."""
+    from keras.models import Model as KerasModel
+    import keras
+    import numpy as np
 
-    def call(self, inputs, training=None):
-        predictions = [model(inputs, training=training) for model in self.models]
-        return np.mean(predictions, axis=0)
+    @keras.saving.register_keras_serializable(package="MyModels") 
+    class KerasEnsemble(KerasModel):
+        def __init__(self, models: list["KerasModel"], **kwargs) -> None:
+            super().__init__(**kwargs)
+            self.models = models
 
-    def get_config(self):
-        config = super().get_config()
-        config.update(
-            {
-                "models": [
-                    keras.saving.serialize_keras_object(model) for model in self.models
-                ]
-            }
-        )
-        return config
+        def call(self, inputs, training=None):
+            predictions = [model(inputs, training=training) for model in self.models]
+            return np.mean(predictions, axis=0)
 
-    @classmethod
-    def from_config(cls, config):
-        models_config = config.pop("models")
-        models = [keras.saving.deserialize_keras_object(c) for c in models_config]
-        return cls(models=models, **config)
+        def get_config(self):
+            config = super().get_config()
+            config.update(
+                {
+                    "models": [
+                        keras.saving.serialize_keras_object(model) for model in self.models
+                    ]
+                }
+            )
+            return config
+
+        @classmethod
+        def from_config(cls, config):
+            models_config = config.pop("models")
+            models = [keras.saving.deserialize_keras_object(c) for c in models_config]
+            return cls(models=models, **config)
+
+    return KerasEnsemble
 
 
-def build_ensemble_model(models: list[KerasModel]):
+def build_ensemble_model(models: list):
     """Build an ensemble model from a list of models."""
+    KerasEnsemble = get_keras_ensemble_class()
     return KerasEnsemble(models=models)

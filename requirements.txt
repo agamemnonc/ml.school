@@ -1,28 +1,29 @@
 python-dotenv==1.0.1
-pytest
-pylint
+pytest==8.3.4
+pylint==3.3.2
 
 mlflow==2.17.1
 mlflow[extras]
-mlserver
-mlserver-mlflow
+mlserver==1.3.0
+mlserver-mlflow==1.3.0
 
 awscurl
 packaging
-setuptools
-evidently
-keras
+setuptools==75.1.0
+evidently==0.5.1
+keras==3.6.0
 scikit-learn==1.5.2
 pandas==2.2.3
-numpy==2.1.1
+numpy==1.26.4
 jax[cpu]==0.4.35
-seaborn
-pingouin
-black[jupyter]
-psutil
+seaborn==0.13.2
+pingouin==0.5.5
+flake8==7.1.1
+black[jupyter]==24.10.0
+psutil==6.1.0
 
-metaflow
-metaflow-card-html
+metaflow==2.12.39
+metaflow-card-html==1.0.2
 
 azure-ai-ml==1.19.0
 azureml-mlflow==1.57.0.post1

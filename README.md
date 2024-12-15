@@ -171,12 +171,12 @@ The command below starts a local server listening in port `8080`. This server wi
 
 ```shell
 mlflow models serve \
-    -m models:/penguins/$(
+    -m models:/penguins_single/$(
         curl -s -X GET "$MLFLOW_TRACKING_URI""/api/2.0/"\
 "mlflow/registered-models/"\
 "get-latest-versions" \
             -H "Content-Type: application/json" \
-            -d '{"name": "penguins"}' | \
+            -d '{"name": "penguins_single"}' | \
         jq -r '.model_versions[0].version'
     ) -h 0.0.0.0 -p 8080 --no-conda
 ```

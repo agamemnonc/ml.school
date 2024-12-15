@@ -123,11 +123,18 @@ class Endpoint(FlowSpec, FlowMixin):
         # numerical features in the data.
         if self.action == "traffic" and self.drift:
             rng = np.random.default_rng()
-            self.data["body_mass_g"] += rng.uniform(
-                1,
-                3 * self.data["body_mass_g"].std(),
-                size=len(self.data),
-            )
+            col_drift = {
+                "culmen_length_mm": (1, 3),
+                "culmen_depth_mm": (-2, -0.5),
+                "flipper_length_mm": (0, 1),
+                "body_mass_g": (-2, 2),
+            }
+            for col, (low, high) in col_drift.items():
+                self.data[col] += rng.uniform(
+                    low,
+                    high,
+                    size=len(self.data),
+                )
 
         self.next(self.traffic)
 
@@ -145,9 +152,13 @@ class Endpoint(FlowSpec, FlowMixin):
                     sagemaker_runtime = boto3.Session().client("sagemaker-runtime")
 
                 while self.dispatched_samples < self.samples:
-                    payload = {}
+                    remaining = self.samples - self.dispatched_samples
+                    if remaining < 10:
+                        batch = self.data.sample(n=remaining)
+                    else:
+                        batch = self.data.sample(n=10)
 
-                    batch = self.data.sample(n=10)
+                    payload = {}
                     payload["inputs"] = [
                         {
                             k: (None if pd.isna(v) else v)
