@@ -142,7 +142,7 @@ class Training(FlowSpec, FlowMixin):
             experiment_id = (
                 DEBUG_EXPERIMENT_ID if self.debugging_mode else TRAINING_EXPERIMENT_ID
             )
-            run = mlflow.start_run(experiment_id=1, run_name=current.run_id)
+            run = mlflow.start_run(experiment_id=experiment_id, run_name=current.run_id)
             self.mlflow_run_id = run.info.run_id
         except Exception as e:
             message = f"Failed to connect to MLflow server {self.mlflow_tracking_uri}."
