@@ -33,9 +33,7 @@ jobs:
           cache: "pip"
 
       - name: Install dependencies
-        run: |
-          pip install uv
-          uv pip install -e .
+        run: pip install -e .
 
       - name: Start MLflow server
         run: |
