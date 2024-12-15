@@ -33,6 +33,14 @@ dependencies = [
     "boto3>=1.35.81",
 ]
 
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["pipelines*"]
+exclude = ["data*", "images*", "backup*", "notebooks*"]
+
 [tool.ruff]
 line-length = 88
 indent-width = 4
