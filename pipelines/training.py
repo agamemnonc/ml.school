@@ -19,8 +19,8 @@ from common import (
     build_target_transformer,
     configure_logging,
     packages,
-    build_ensemble_model,
 )
+from models import build_ensemble_model
 from inference import Model
 from metaflow import (
     FlowSpec,
