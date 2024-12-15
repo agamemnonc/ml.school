@@ -35,10 +35,12 @@ PACKAGES = {
 
 TRAINING_EPOCHS = 50
 TRAINING_BATCH_SIZE = 32
+TRAINING_EXPERIMENT_ID = 0
 
 DEBUG_TRAINING_EPOCHS = 2
 DEBUG_N_SPLITS = 2
 DEBUG_DATA_FRAC = 0.1
+DEBUG_EXPERIMENT_ID = 1
 
 
 class FlowMixin:
@@ -187,46 +189,3 @@ def build_model(input_shape, learning_rate=0.01):
     )
 
     return model
-
-
-def get_keras_ensemble_class():
-    """Get the KerasEnsemble class with proper Keras imports."""
-    from keras.models import Model as KerasModel
-    import keras
-    import numpy as np
-
-    @keras.saving.register_keras_serializable(package="MyModels")
-    class KerasEnsemble(KerasModel):
-        def __init__(self, models: list["KerasModel"], **kwargs) -> None:
-            super().__init__(**kwargs)
-            self.models = models
-
-        def call(self, inputs, training=None):
-            predictions = [model(inputs, training=training) for model in self.models]
-            return np.mean(predictions, axis=0)
-
-        def get_config(self):
-            config = super().get_config()
-            config.update(
-                {
-                    "models": [
-                        keras.saving.serialize_keras_object(model)
-                        for model in self.models
-                    ]
-                }
-            )
-            return config
-
-        @classmethod
-        def from_config(cls, config):
-            models_config = config.pop("models")
-            models = [keras.saving.deserialize_keras_object(c) for c in models_config]
-            return cls(models=models, **config)
-
-    return KerasEnsemble
-
-
-def build_ensemble_model(models: list):
-    """Build an ensemble model from a list of models."""
-    KerasEnsemble = get_keras_ensemble_class()
-    return KerasEnsemble(models=models)
