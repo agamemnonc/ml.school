@@ -8,17 +8,19 @@ from common import (
     PYTHON,
     TRAINING_BATCH_SIZE,
     TRAINING_EPOCHS,
+    TRAINING_EXPERIMENT_ID,
     DEBUG_N_SPLITS,
     DEBUG_TRAINING_EPOCHS,
     DEBUG_DATA_FRAC,
+    DEBUG_EXPERIMENT_ID,
     FlowMixin,
     build_features_transformer,
     build_model,
     build_target_transformer,
     configure_logging,
     packages,
-    build_ensemble_model,
 )
+from models import build_ensemble_model
 from inference import Model
 from metaflow import (
     FlowSpec,
@@ -137,7 +139,10 @@ class Training(FlowSpec, FlowMixin):
             # execution of this flow. We want to set the name of the MLFlow
             # experiment to the Metaflow run identifier so we can easily
             # recognize which experiment corresponds with each run.
-            run = mlflow.start_run(run_name=current.run_id)
+            experiment_id = (
+                DEBUG_EXPERIMENT_ID if self.debugging_mode else TRAINING_EXPERIMENT_ID
+            )
+            run = mlflow.start_run(experiment_id=experiment_id, run_name=current.run_id)
             self.mlflow_run_id = run.info.run_id
         except Exception as e:
             message = f"Failed to connect to MLflow server {self.mlflow_tracking_uri}."
