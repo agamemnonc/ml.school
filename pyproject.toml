@@ -29,6 +29,8 @@ dependencies = [
     "metaflow-card-html>=1.0.2",
     "azure-ai-ml>=1.22.4",
     "azureml-mlflow>=1.58.0",
+    "requests>=2.32.3",
+    "boto3>=1.35.81",
 ]
 
 [tool.ruff]
